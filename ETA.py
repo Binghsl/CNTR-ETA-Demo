@@ -38,11 +38,23 @@ async def track_one_bl(master_bl):
         await browser.close()
         return content
 
+def deduplicate_columns(columns):
+    seen = {}
+    new_cols = []
+    for col in columns:
+        if col not in seen:
+            seen[col] = 1
+            new_cols.append(col)
+        else:
+            seen[col] += 1
+            new_cols.append(f"{col}_{seen[col]}")
+    return new_cols
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file, header=1)
 
     # Ensure unique column names
-    df.columns = pd.io.parsers.ParserBase({'names': df.columns})._maybe_dedup_names(df.columns)
+    df.columns = deduplicate_columns(df.columns)
 
     # Try to rename columns dynamically based on partial name match
     rename_map = {}
