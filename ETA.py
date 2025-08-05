@@ -8,9 +8,9 @@ st.set_page_config(page_title="ETA Tracker", layout="wide")
 st.title("📦 Master B/L ETA Tracker")
 
 st.markdown("""
-Upload an Excel file with the following headers:
+Upload an Excel file with the following headers (not case-sensitive):
 - **CARRIER**
-- **Master BL**
+- **Master B/L**
 - **SCI**
 
 The app will fetch ETA from supported carrier websites (starting with ONE).
@@ -40,55 +40,67 @@ async def track_one_bl(master_bl):
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file, header=1)
-    df = df.rename(columns={
-        df.columns[0]: "CARRIER",
-        df.columns[1]: "CONTAINER NO",
-        df.columns[2]: "House BL",
-        df.columns[3]: "Master BL",
-        df.columns[4]: "SCI",
-    })
 
-    df = df.dropna(subset=["Master BL", "CARRIER", "SCI"])
-    st.write("### Uploaded Data", df[["SCI", "CARRIER", "Master BL"]])
+    # Ensure unique column names
+    df.columns = pd.io.parsers.ParserBase({'names': df.columns})._maybe_dedup_names(df.columns)
 
-    if st.button("🔍 Start ETA Tracking"):
-        with st.spinner("Tracking in progress..."):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            for _, row in df.iterrows():
-                carrier = str(row["CARRIER"]).strip().upper()
-                mbl = str(row["Master BL"]).strip()
-                sci = str(row["SCI"]).strip()
+    # Try to rename columns dynamically based on partial name match
+    rename_map = {}
+    for col in df.columns:
+        if "CARRIER" in col.upper():
+            rename_map[col] = "CARRIER"
+        elif "MASTER" in col.upper():
+            rename_map[col] = "Master BL"
+        elif "SCI" in col.upper():
+            rename_map[col] = "SCI"
 
-                if carrier == "ONE":
-                    raw_info = loop.run_until_complete(track_one_bl(mbl))
-                    # Simple ETA extract
-                    eta = "N/A"
-                    for line in raw_info.splitlines():
-                        if "ETA" in line:
-                            eta = line.strip()
-                            break
-                    results.append({
-                        "SCI": sci,
-                        "Master BL": mbl,
-                        "Carrier": carrier,
-                        "ETA": eta,
-                        "Raw Info": raw_info
-                    })
-                else:
-                    results.append({
-                        "SCI": sci,
-                        "Master BL": mbl,
-                        "Carrier": carrier,
-                        "ETA": "Unsupported carrier",
-                        "Raw Info": "Only ONE Line supported in this version"
-                    })
+    df = df.rename(columns=rename_map)
 
-            result_df = pd.DataFrame(results)
-            st.success("Tracking complete!")
-            st.write(result_df)
+    required_cols = ["SCI", "CARRIER", "Master BL"]
+    if not all(col in df.columns for col in required_cols):
+        st.error(f"Missing required columns: {', '.join(set(required_cols) - set(df.columns))}")
+    else:
+        df = df.dropna(subset=["Master BL", "CARRIER", "SCI"])
+        st.write("### Uploaded Data", df[required_cols])
 
-            # Offer Excel download
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                result_df.to_excel(tmp.name, index=False)
-                st.download_button("📥 Download Result Excel", tmp.name, file_name="ETA_Results.xlsx")
+        if st.button("🔍 Start ETA Tracking"):
+            with st.spinner("Tracking in progress..."):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                for _, row in df.iterrows():
+                    carrier = str(row["CARRIER"]).strip().upper()
+                    mbl = str(row["Master BL"]).strip()
+                    sci = str(row["SCI"]).strip()
+
+                    if carrier == "ONE":
+                        raw_info = loop.run_until_complete(track_one_bl(mbl))
+                        # Simple ETA extract
+                        eta = "N/A"
+                        for line in raw_info.splitlines():
+                            if "ETA" in line.upper():
+                                eta = line.strip()
+                                break
+                        results.append({
+                            "SCI": sci,
+                            "Master BL": mbl,
+                            "Carrier": carrier,
+                            "ETA": eta,
+                            "Raw Info": raw_info
+                        })
+                    else:
+                        results.append({
+                            "SCI": sci,
+                            "Master BL": mbl,
+                            "Carrier": carrier,
+                            "ETA": "Unsupported carrier",
+                            "Raw Info": "Only ONE Line supported in this version"
+                        })
+
+                result_df = pd.DataFrame(results)
+                st.success("Tracking complete!")
+                st.write(result_df)
+
+                # Offer Excel download
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                    result_df.to_excel(tmp.name, index=False)
+                    st.download_button("📥 Download Result Excel", tmp.name, file_name="ETA_Results.xlsx")
