@@ -59,11 +59,12 @@ if uploaded_file:
     # Try to rename columns dynamically based on partial name match
     rename_map = {}
     for col in df.columns:
-        if "CARRIER" in col.upper():
+        col_str = str(col).strip()
+        if "CARRIER" in col_str.upper():
             rename_map[col] = "CARRIER"
-        elif "MASTER" in col.upper():
+        elif "MASTER" in col_str.upper():
             rename_map[col] = "Master BL"
-        elif "SCI" in col.upper():
+        elif "SCI" in col_str.upper():
             rename_map[col] = "SCI"
 
     df = df.rename(columns=rename_map)
