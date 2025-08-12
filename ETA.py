@@ -1,42 +1,62 @@
-import streamlit as st
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import StreamingResponse
 import pandas as pd
-import tempfile
-import requests
+from io import BytesIO
+from playwright.async_api import async_playwright
+import asyncio
 
-st.set_page_config(page_title="Remote ETA Tracker", layout="wide")
-st.title("📦 ONE Line ETA Tracker (Remote Agent)")
+app = FastAPI()
 
-st.markdown("""
-Upload an Excel file with the following columns:
-- **SCI**
-- **CARRIER** (currently supports only `ONE`)
-- **Master BL**
+async def track_one_bl(mbl: str):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto("https://ecomm.one-line.com/one-ecom/searchContainer")
+        await page.get_by_placeholder("B/L or Booking or Container No").fill(mbl)
+        await page.get_by_role("button", name="Track").click()
+        await page.wait_for_timeout(5000)
 
-ETA will be fetched remotely using an external agent (no API or Playwright needed locally).
-""")
+        content = await page.content()
+        eta = "Not Found"
+        try:
+            if "ETA" in content:
+                element = await page.query_selector("//div[contains(text(), 'ETA')]/following-sibling::div")
+                eta = await element.inner_text() if element else "ETA not found"
+        except:
+            pass
+        await browser.close()
+        return eta.strip()
 
-uploaded_file = st.file_uploader("Upload Excel", type=[".xlsx"])
+@app.post("/track")
+async def upload_excel(file: UploadFile = File(...)):
+    df = pd.read_excel(file.file)
+    results = []
+    for _, row in df.iterrows():
+        sci = row.get("SCI")
+        carrier = str(row.get("CARRIER")).strip().upper()
+        mbl = str(row.get("Master BL")).strip()
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
-    st.write("### Uploaded Data", df)
-
-    if st.button("🔍 Fetch ETA"):
-        with st.spinner("Fetching ETA using remote agent..."):
+        if carrier == "ONE" and mbl:
             try:
-                response = requests.post(
-                    "https://eta-agent.bhsn.workers.dev/",
-                    files={"file": uploaded_file.getvalue()}
-                )
-                if response.status_code == 200:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                        tmp.write(response.content)
-                        tmp.flush()
-                        result_df = pd.read_excel(tmp.name)
-                        st.success("✅ ETA fetched successfully!")
-                        st.write(result_df)
-                        st.download_button("📥 Download Results", tmp.name, file_name="ETA_Results.xlsx")
-                else:
-                    st.error("Failed to fetch ETA. Status code: {}".format(response.status_code))
+                eta = await track_one_bl(mbl)
+                results.append({
+                    "SCI": sci,
+                    "CARRIER": carrier,
+                    "Master BL": mbl,
+                    "ETA": eta,
+                    "Raw Info": f"ETA: {eta}"
+                })
             except Exception as e:
-                st.error(f"Error contacting remote agent: {str(e)}")
+                results.append({
+                    "SCI": sci,
+                    "CARRIER": carrier,
+                    "Master BL": mbl,
+                    "ETA": "ERROR",
+                    "Raw Info": str(e)
+                })
+
+    output_df = pd.DataFrame(results)
+    stream = BytesIO()
+    output_df.to_excel(stream, index=False)
+    stream.seek(0)
+    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=ETA_Results.xlsx"})
