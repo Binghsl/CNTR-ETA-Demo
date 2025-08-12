@@ -3,7 +3,6 @@ from fastapi.responses import StreamingResponse
 import pandas as pd
 from io import BytesIO
 from playwright.async_api import async_playwright
-import asyncio
 
 app = FastAPI()
 
