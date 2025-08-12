@@ -6,6 +6,10 @@ from playwright.async_api import async_playwright
 
 app = FastAPI()
 
+@app.get("/")
+def root():
+    return {"status": "ETA backend is running"}
+
 async def track_one_bl(mbl: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -58,4 +62,8 @@ async def upload_excel(file: UploadFile = File(...)):
     stream = BytesIO()
     output_df.to_excel(stream, index=False)
     stream.seek(0)
-    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=ETA_Results.xlsx"})
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=ETA_Results.xlsx"}
+    )
