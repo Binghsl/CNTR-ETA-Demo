@@ -5,6 +5,6 @@ WORKDIR /app
 COPY . .
 
 RUN pip install --no-cache-dir -r requirements.txt
-RUN playwright install --with-deps
+RUN python -m playwright install --with-deps
 
-CMD ["uvicorn", "ETA:app", "--host", "0.0.0.0", "--port", "10000"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "10000"]
