@@ -1,6 +1,4 @@
-fastapi
-uvicorn
+streamlit
 pandas
 openpyxl
-playwright
-python-multipart
+requests
